@@ -88,7 +88,7 @@ uvicorn server:app --host 0.0.0.0 --port 8000
 ## Running Benchmark
 
 ```bash
-python3 benchmark.py
+python benchmark.py
 ```
 
 ---
