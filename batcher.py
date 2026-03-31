@@ -2,7 +2,7 @@ import asyncio
 import time
 
 class DynamicBatcher:
-    def __init__(self, model, batch_size=8, timeout=0.02):
+    def __init__(self, model, batch_size=4, timeout=0.02):
         self.model = model
         self.batch_size = batch_size
         self.timeout = timeout
@@ -29,10 +29,11 @@ class DynamicBatcher:
 
     async def _process(self, batch):
         texts = [item["text"] for item in batch]
-        outputs = self.model.generate(texts)
+
+        results = self.model.generate(texts)
 
         for i, item in enumerate(batch):
-            item["future"].set_result(outputs[i])
+            item["future"].set_result(results[i])
 
     async def enqueue(self, text):
         loop = asyncio.get_event_loop()
@@ -53,5 +54,6 @@ class DynamicBatcher:
         return {
             "ttft": first_chunk_time - start_time,
             "audio_duration": result["audio_duration"],
+            "generation_time": result["generation_time"],
             "end_time": time.time()
         }

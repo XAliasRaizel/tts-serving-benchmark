@@ -2,7 +2,7 @@ import asyncio
 from client import send_request
 from utils import compute_stats
 
-TEXT = "Hello this is a test for TTS serving system"
+TEXT = "Hello this is a test for TTS serving system. This benchmark measures real TTS inference performance."
 
 async def run_concurrent(n):
     tasks = [send_request(TEXT) for _ in range(n)]
@@ -18,12 +18,13 @@ async def main():
         print(f"\n=== Concurrency {c} ===")
 
         # warmup
-        await run_concurrent(c)
+        for _ in range(2):
+            await run_concurrent(1)
 
         all_ttft = []
         all_rtf = []
 
-        for _ in range(5):
+        for _ in range(3):
             ttfts, rtfs = await run_concurrent(c)
             all_ttft.extend(ttfts)
             all_rtf.extend(rtfs)
