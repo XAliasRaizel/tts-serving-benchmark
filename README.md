@@ -1,16 +1,15 @@
-# TTS Serving Benchmark — Chatterbox Turbo
+# TTS Serving Benchmark — Real Inference (Chatterbox Turbo Setup)
 
 ## Overview
 
-This project benchmarks a Text-to-Speech (TTS) serving pipeline using **Chatterbox Turbo** under varying concurrency levels (1, 5, 10).
+This project benchmarks a Text-to-Speech (TTS) serving pipeline under varying concurrency levels (1, 5, 10).
 
-The focus is on:
+The goal is to:
 
-* **Latency (TTFT — Time to First Token)**
-* **Generation speed (RTF — Real-Time Factor)**
-* **Scalability under concurrent workloads**
-
-Additionally, I identified and implemented the **highest-impact optimization (dynamic batching)** to improve tail latency and system throughput.
+* Measure **latency (TTFT — Time to First Token)**
+* Measure **generation speed (RTF — Real-Time Factor)**
+* Evaluate **system behavior under concurrency**
+* Implement and analyze **dynamic batching as an optimization**
 
 ---
 
@@ -35,57 +34,39 @@ RTF = generation_time / audio_duration
 
 ## GPU Verification
 
-### System Check
-
 ```bash
 nvidia-smi
 ```
 
-### Example Output
+Example:
 
-```
-+------------------------------------------------------------------------------+
-| NVIDIA-SMI 535.xx       Driver Version: 535.xx       CUDA Version: 12.x      |
-| GPU  Name        Persistence-M | Bus-Id        Disp.A | Volatile Uncorr. ECC |
-|  0   Tesla T4              On  | 00000000:00:04.0 Off |                    0 |
-+------------------------------------------------------------------------------+
-```
-
-### PyTorch Check
-
-```python
-import torch
-print("GPU Available:", torch.cuda.is_available())
-print("GPU Name:", torch.cuda.get_device_name(0))
-```
+* GPU: RTX 3050 Ti Laptop GPU
+* CUDA enabled: True
 
 ---
 
 ## Setup
 
 ```bash
-git clone <your-repo-link>
 cd tts-serving
 
-python3 -m venv venv
+python -m venv venv
 source venv/bin/activate
 
 pip install -r requirements.txt
 ```
 
-Tested on Python 3.10+
-
 ---
 
-## Running the Server
+## Run
+
+### Start Server
 
 ```bash
 uvicorn server:app --host 0.0.0.0 --port 8000
 ```
 
----
-
-## Running Benchmark
+### Run Benchmark
 
 ```bash
 python benchmark.py
@@ -93,71 +74,115 @@ python benchmark.py
 
 ---
 
-## Results
+## Benchmark Results (Real Model)
+
+### Run 1
 
 | Concurrency | TTFT p50 | TTFT p95 | RTF p50 | RTF p95 |
 | ----------- | -------- | -------- | ------- | ------- |
-| 1           | 0.076s   | 0.076s   | 0.09    | 0.10    |
-| 5           | 0.078s   | 0.079s   | 0.16    | 0.23    |
-| 10          | 0.055s   | 0.125s   | 0.23    | 0.39    |
+| 1           | 3.13s    | 3.19s    | 0.56    | 0.59    |
+| 5           | 12.08s   | 14.73s   | 0.54    | 0.60    |
+| 10          | 23.50s   | 28.05s   | 0.52    | 0.63    |
 
 ---
 
-## Key Improvement
+### Run 2
 
-* TTFT p95 reduced from **~1.39s → ~0.12s**
-* RTF p95 reduced from **~1.89 → ~0.39**
-
-This demonstrates a **significant reduction in tail latency** under high concurrency.
+| Concurrency | TTFT p50 | TTFT p95 | RTF p50 | RTF p95 |
+| ----------- | -------- | -------- | ------- | ------- |
+| 1           | 2.75s    | 2.81s    | 0.47    | 0.49    |
+| 5           | 9.84s    | 12.82s   | 0.45    | 0.64    |
+| 10          | 24.37s   | 30.37s   | 0.55    | 0.67    |
 
 ---
 
 ## Observations
 
-* At low concurrency, the system achieves low latency (~76ms TTFT) and fast generation (RTF < 0.1).
-* Under higher concurrency, naive request handling leads to **queueing delays and GPU underutilization**.
-* Tail latency (p95) is the key bottleneck in real-time systems.
-* After optimization, latency remains stable even at concurrency 10, indicating improved scalability.
+* At **low concurrency (c=1)**:
+
+  * TTFT ~2.7–3.1s
+  * RTF ~0.47–0.56
+  * Indicates real model inference latency on GPU
 
 ---
 
-## Optimization: Dynamic Batching
+* As **concurrency increases**:
+
+  * TTFT increases significantly (up to ~30s p95 at c=10)
+  * This indicates **queueing delay dominates latency**
+
+---
+
+* **RTF remains relatively stable (~0.45–0.65)**:
+
+  * Shows that model compute time is consistent
+  * GPU performance does not degrade significantly
+
+---
+
+## Key Insight
+
+* The primary bottleneck is **queueing delay**, not model computation
+* The system scales in a **latency-bound manner**, not compute-bound
+
+---
+
+## Dynamic Batching Analysis
 
 ### Approach
 
-* Batch window: **20 ms**
+* Batch window: **50 ms**
 * Batch size: **8**
-* Multiple requests processed in a single GPU forward pass
+* Requests grouped before processing
 
 ---
 
-### Why it works
+### Behavior
 
-* Reduces GPU idle time
-* Improves throughput
-* Minimizes queueing delays
+* Batching correctly groups requests at the **scheduling layer**
+* However, the model processes inputs **sequentially internally**
+* As a result:
+
+  * No significant improvement in RTF
+  * Limited improvement in TTFT under load
 
 ---
 
 ### Tradeoff
 
-* Slight increase in TTFT due to batching window
-* Significant reduction in p95 latency
+| Benefit                  | Limitation                            |
+| ------------------------ | ------------------------------------- |
+| Better request grouping  | No true GPU batching                  |
+| Slight smoothing of load | Queue delay still dominant            |
+| Stable system behavior   | Throughput not improved significantly |
+
+---
+
+## Hardware Note
+
+* GPU used: **RTX 3050 Ti Laptop GPU**
+* Observed RTF (~0.5) indicates **faster-than-real-time generation**
+* This differs from expected T4 behavior (RTF > 1.0)
 
 ---
 
 ## What I’d Try Next
 
-* KV cache optimization for streaming TTS
-* FP8 / INT8 quantization to increase batch size under VRAM constraints
-* TensorRT-LLM for kernel-level optimization
+* Use a model that supports **true batched inference**
+* Integrate **vLLM-style continuous batching**
+* Explore **TensorRT optimization**
+* Apply **quantization (FP16 / INT8)** to improve throughput
 
 ---
 
 ## Conclusion
 
-The system performs efficiently under low load but requires batching to scale under concurrent workloads.
+The system performs reliably under real TTS inference and demonstrates correct scaling behavior under concurrent workloads.
 
-Dynamic batching proved to be the **highest-impact optimization**, significantly reducing tail latency and improving real-time performance, making the system robust for production-style usage.
+Dynamic batching improves scheduling but does not significantly improve throughput due to lack of model-level batching support.
+
+The results highlight that:
+
+> **Efficient GPU utilization requires batching at the model inference level, not just at the request scheduling layer.**
 
 ---
